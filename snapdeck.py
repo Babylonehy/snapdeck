@@ -500,10 +500,12 @@ ANNOTATE_SHIM = """
     background:radial-gradient(circle,rgba(255,40,40,.95) 0%,rgba(255,40,40,.5) 42%,rgba(255,40,40,0) 70%);
     box-shadow:0 0 14px 5px rgba(255,30,30,.55); pointer-events:none; transform:translate(-50%,-50%); display:none; }
   #sd-tools { position:fixed; left:18px; bottom:18px; z-index:2147483600; display:flex; gap:5px; align-items:center;
-    background:rgba(20,22,26,.82); border-radius:999px; padding:6px 8px; opacity:.45; transition:opacity .2s;
+    background:rgba(20,22,26,.86); border-radius:999px; padding:6px 8px; opacity:.9; transition:opacity .25s;
     -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); user-select:none;
     font:600 13px/1 -apple-system,'Noto Sans SC',sans-serif; }
-  #sd-tools:hover { opacity:1; }
+  #sd-tools.sd-hide { opacity:0; pointer-events:none; }
+  #sd-grip { cursor:grab; color:rgba(255,255,255,.55); padding:0 4px 0 2px; font-size:15px; line-height:1; touch-action:none; }
+  #sd-grip:active { cursor:grabbing; }
   #sd-tools button { background:transparent; color:#e8eaed; border:0; border-radius:999px; cursor:pointer;
     padding:7px 11px; font:inherit; line-height:1; }
   #sd-tools button:hover { background:rgba(255,255,255,.12); }
@@ -516,6 +518,7 @@ ANNOTATE_SHIM = """
 <canvas id="sd-canvas"></canvas>
 <div id="sd-laser"></div>
 <div id="sd-tools">
+  <span id="sd-grip" title="Drag to move">⠿</span>
   <button data-mode="off" class="active" title="Cursor (Esc)">Cursor</button>
   <button data-mode="laser" title="Laser pointer (L)">Laser</button>
   <span class="sep"></span>
@@ -524,69 +527,128 @@ ANNOTATE_SHIM = """
   <button class="dot" data-color="#3b82f6" style="background:#3b82f6" title="Pen — blue"></button>
   <span class="sep"></span>
   <button data-mode="erase" title="Eraser (E)">Erase</button>
+  <button data-act="undo" title="Undo (⌘/Ctrl+Z)">Undo</button>
   <button data-act="clear" title="Clear (Del)">Clear</button>
 </div>
 <script>
-/* Presentation annotation: laser pointer, freehand pen (3 colors), eraser,
-   clear. Toolbar bottom-left; works in fullscreen; ink clears on slide change.
-   Shortcuts: L laser · P pen · E erase · Esc cursor · Del clear. */
+/* Presentation annotation: laser pointer, pen (3 colors), eraser, undo, clear.
+   Toolbar auto-hides when idle in cursor mode (like the page counter) and is
+   draggable by its grip; works in fullscreen; ink is per-slide.
+   Shortcuts: L laser · P pen · E erase · Esc cursor · Z / Cmd+Z undo · Del clear. */
 (function () {
   var cv = document.getElementById('sd-canvas'), ctx = cv.getContext('2d');
   var laser = document.getElementById('sd-laser'), tools = document.getElementById('sd-tools');
-  var mode = 'off', color = '#ff2d2d', drawing = false, last = null;
+  var grip = document.getElementById('sd-grip');
+  var mode = 'off', color = '#ff2d2d', drawing = false, last = null, cur = null;
+  var strokes = [], undoStack = [], dragging = false, hovering = false, hideTimer = null;
   var dpr = Math.max(1, window.devicePixelRatio || 1);
+
   function resize() {
     dpr = Math.max(1, window.devicePixelRatio || 1);
     cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
     cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    strokes = []; undoStack = [];          // device-pixel coords don't survive a resize
   }
   resize(); addEventListener('resize', resize);
+
   function drawable() { return mode === 'pen' || mode === 'erase'; }
+  function redraw() {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    strokes.forEach(function (s) {
+      ctx.globalCompositeOperation = s.e ? 'destination-out' : 'source-over';
+      ctx.strokeStyle = s.c; ctx.lineWidth = s.w;
+      ctx.beginPath(); ctx.moveTo(s.p[0][0], s.p[0][1]);
+      for (var i = 1; i < s.p.length; i++) ctx.lineTo(s.p[i][0], s.p[i][1]);
+      ctx.lineTo(s.p[s.p.length - 1][0], s.p[s.p.length - 1][1]);
+      ctx.stroke();
+    });
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  function pushHistory() { undoStack.push(strokes.slice()); if (undoStack.length > 60) undoStack.shift(); }
+  function undo() { if (undoStack.length) { strokes = undoStack.pop(); redraw(); } }
+  function clearAll() { if (strokes.length) { pushHistory(); strokes = []; redraw(); } }
+  function P(e) { return [e.clientX * dpr, e.clientY * dpr]; }
+
+  cv.addEventListener('pointerdown', function (e) {
+    if (!drawable()) return;
+    pushHistory();
+    cur = { c: color, w: (mode === 'erase' ? 28 : 3.5) * dpr, e: mode === 'erase', p: [P(e)] };
+    strokes.push(cur); drawing = true; last = cur.p[0]; cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove', function (e) {
+    if (!drawing) return; var p = P(e); cur.p.push(p);
+    ctx.globalCompositeOperation = cur.e ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = cur.c; ctx.lineWidth = cur.w;
+    ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p;
+  });
+  function end() { if (drawing && cur && cur.p.length === 1) redraw(); drawing = false; cur = null; }
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+
+  // Toolbar visibility — auto-hide when idle in cursor mode; stay up while a tool is active.
+  function scheduleHide() {
+    clearTimeout(hideTimer);
+    if (mode === 'off' && !hovering && !dragging)
+      hideTimer = setTimeout(function () { tools.classList.add('sd-hide'); }, 2200);
+  }
+  function showTools() { tools.classList.remove('sd-hide'); scheduleHide(); }
   function refresh() {
     cv.style.pointerEvents = drawable() ? 'auto' : 'none';
     cv.style.cursor = drawable() ? 'crosshair' : 'default';
     laser.style.display = mode === 'laser' ? 'block' : 'none';
     tools.querySelectorAll('[data-mode]').forEach(function (b) { b.classList.toggle('active', b.dataset.mode === mode); });
     tools.querySelectorAll('.dot').forEach(function (d) { d.classList.toggle('active', mode === 'pen' && d.dataset.color === color); });
+    if (mode === 'off') scheduleHide();
+    else { tools.classList.remove('sd-hide'); clearTimeout(hideTimer); }
   }
   function setMode(m) { mode = m; refresh(); }
   function setPen(c) { color = c; mode = 'pen'; refresh(); }
-  function clear() { ctx.clearRect(0, 0, cv.width, cv.height); }
-  function P(e) { return [e.clientX * dpr, e.clientY * dpr]; }
-  cv.addEventListener('pointerdown', function (e) {
-    if (!drawable()) return; drawing = true; last = P(e); cv.setPointerCapture(e.pointerId);
-  });
-  cv.addEventListener('pointermove', function (e) {
-    if (!drawing) return; var p = P(e);
-    ctx.globalCompositeOperation = mode === 'erase' ? 'destination-out' : 'source-over';
-    ctx.strokeStyle = color; ctx.lineWidth = (mode === 'erase' ? 28 : 3.5) * dpr;
-    ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p;
-  });
-  function end() { drawing = false; }
-  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+
   addEventListener('pointermove', function (e) {
     if (mode === 'laser') { laser.style.left = e.clientX + 'px'; laser.style.top = e.clientY + 'px'; }
+    if (!drawing) showTools();
   }, true);
+  tools.addEventListener('mouseenter', function () { hovering = true; tools.classList.remove('sd-hide'); clearTimeout(hideTimer); });
+  tools.addEventListener('mouseleave', function () { hovering = false; scheduleHide(); });
+
+  // Drag to reposition by the grip.
+  grip.addEventListener('pointerdown', function (e) {
+    e.preventDefault(); dragging = true; grip.setPointerCapture(e.pointerId);
+    var r = tools.getBoundingClientRect(), ox = r.left, oy = r.top, sx = e.clientX, sy = e.clientY;
+    tools.style.left = ox + 'px'; tools.style.top = oy + 'px'; tools.style.right = 'auto'; tools.style.bottom = 'auto';
+    function mv(ev) {
+      tools.style.left = Math.max(4, Math.min(innerWidth - r.width - 4, ox + ev.clientX - sx)) + 'px';
+      tools.style.top = Math.max(4, Math.min(innerHeight - r.height - 4, oy + ev.clientY - sy)) + 'px';
+    }
+    function up() { dragging = false; removeEventListener('pointermove', mv, true); removeEventListener('pointerup', up, true); scheduleHide(); }
+    addEventListener('pointermove', mv, true); addEventListener('pointerup', up, true);
+  });
+
   tools.addEventListener('click', function (e) {
     var b = e.target.closest('button'); if (!b) return;
     e.stopPropagation();
-    if (b.dataset.act === 'clear') clear();
+    if (b.dataset.act === 'undo') undo();
+    else if (b.dataset.act === 'clear') clearAll();
     else if (b.dataset.color) setPen(b.dataset.color);
     else if (b.dataset.mode) setMode(b.dataset.mode);
-    b.blur();   // so Space/→ go back to slide navigation, not re-trigger the button
+    b.blur();   // so Space/→ go back to slide navigation
   });
+
   addEventListener('keydown', function (e) {
+    var k = e.key.toLowerCase();
+    if ((e.metaKey || e.ctrlKey) && k === 'z') { undo(); e.preventDefault(); return; }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     var t = e.target; if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
-    var k = e.key.toLowerCase();
     if (k === 'l') setMode('laser');
     else if (k === 'p') setPen(color);
     else if (k === 'e') setMode('erase');
+    else if (k === 'z') undo();
     else if (k === 'escape') setMode('off');
-    else if (k === 'delete' || (k === 'backspace')) { clear(); e.preventDefault(); }
+    else if (k === 'delete') { clearAll(); e.preventDefault(); }
   });
-  document.addEventListener('slidechange', clear);   // ink is per-slide
+
+  document.addEventListener('slidechange', function () { strokes = []; undoStack = []; redraw(); });
+  showTools();   // visible on load, then auto-hides
 })();
 </script>
 """
