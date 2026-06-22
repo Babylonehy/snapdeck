@@ -1,0 +1,11 @@
+# Snapdeck output bundles
+*-offline/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS
+.DS_Store
