@@ -166,10 +166,12 @@ def find_chrome(override):
     return None
 
 
-def render_snapshot(html_path, chrome_override):
-    """Serve the export over localhost, render it with its runtime in headless
-    Chrome, and return the fully-expanded DOM (templates/components resolved).
-    Returns None if Chrome is unavailable or rendering fails."""
+def render_snapshot(html_path, chrome_override, budgets):
+    """Serve the export over localhost and render it with its runtime in headless
+    Chrome at each virtual-time budget, returning a list of fully-expanded DOM
+    trees (one per budget). Multiple frames let the caller keep the *fullest*
+    version of any slide whose content is revealed over time (setInterval, etc.).
+    Returns None if Chrome is unavailable or every render fails."""
     chrome = find_chrome(chrome_override)
     if not chrome:
         log("  ! Chrome/Chromium not found — skipping render pass (pass --chrome PATH)")
@@ -180,23 +182,34 @@ def render_snapshot(html_path, chrome_override):
             pass
 
     handler = functools.partial(Quiet, directory=str(html_path.parent))
-    httpd = socketserver.TCPServer(("127.0.0.1", 0), handler)
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{port}/{quote(html_path.name)}"
+
+    def one(budget):
+        try:
+            cmd = [chrome, "--headless=new", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
+                   f"--virtual-time-budget={budget}", "--dump-dom", url]
+            html = subprocess.run(cmd, capture_output=True, timeout=150).stdout.decode("utf-8", "replace")
+            if "deck-stage" not in html:
+                return None
+            # Force UTF-8: dump-dom has no charset hint, else lxml guesses Latin-1
+            # and mojibakes CJK filenames/text.
+            return lxml.html.fromstring(html.encode("utf-8"),
+                                        parser=lxml.html.HTMLParser(encoding="utf-8"))
+        except Exception:
+            return None
+
+    n = len(budgets)
+    log(f"  rendering deck with its runtime ({n} frame{'s' if n > 1 else ''} for timed reveals)…")
     try:
-        url = f"http://127.0.0.1:{port}/{quote(html_path.name)}"
-        log("  rendering deck with its runtime (expanding templates/components)…")
-        cmd = [chrome, "--headless=new", "--disable-gpu", "--no-sandbox",
-               "--virtual-time-budget=20000", "--dump-dom", url]
-        res = subprocess.run(cmd, capture_output=True, timeout=90)
-        html = res.stdout.decode("utf-8", "replace")
-        if "deck-stage" not in html:
+        with cf.ThreadPoolExecutor(max_workers=min(3, n)) as ex:
+            trees = [t for t in ex.map(one, budgets) if t is not None]
+        if not trees:
             log("  ! render produced no deck-stage; falling back to raw parse")
             return None
-        # Force UTF-8: Chrome's dump-dom has no charset hint, so lxml would
-        # otherwise guess Latin-1 and mojibake CJK filenames/text.
-        return lxml.html.fromstring(html.encode("utf-8"),
-                                    parser=lxml.html.HTMLParser(encoding="utf-8"))
+        return trees
     except Exception as e:
         log(f"  ! render failed ({e}); falling back to raw parse")
         return None
@@ -217,48 +230,71 @@ def parse_export(input_path, deck_index=None, render="auto", chrome=None):
     if not html_path.exists():
         sys.exit(f"File not found: {html_path}")
 
-    raw_tree = lxml.html.fromstring(html_path.read_bytes())
+    raw_bytes = html_path.read_bytes()
+    raw_tree = lxml.html.fromstring(raw_bytes)
     head_styles, font_links = _collect_head_styles(raw_tree)
 
-    # The raw <section>s may contain dc-runtime templates ({{…}}) or nested
-    # components (<x-…>) that only support.js expands. Render the live deck and
-    # snapshot the finished DOM so those slides aren't bundled half-empty.
-    section_tree = raw_tree
+    # The raw <section>s may contain dc-runtime templates ({{…}}) / components
+    # (<sc-…>, <x-…>) that only support.js expands. Render the live deck and
+    # snapshot the finished DOM so those slides aren't bundled half-empty. When
+    # the deck reveals content over time (setInterval/…), capture several frames
+    # and keep the fullest version of each slide.
+    section_trees = [raw_tree]
     if render != "never":
         blob = "".join(
             lxml.html.tostring(s, encoding="unicode")
             for el in _find_decks(raw_tree)
             for s in (el.xpath("./section") or el.xpath(".//section")))
-        templated = ("{{" in blob) or bool(re.search(r"<x-(?!dc\b|import\b)", blob))
-        if render == "always" or templated:
-            rendered = render_snapshot(html_path, chrome)
-            if rendered is not None:
-                section_tree = rendered
-            elif templated:
-                log("  ! slides use templates ({{…}}) but render was unavailable — "
+        templated = ("{{" in blob) or ("<sc-" in blob) or bool(re.search(r"<x-(?!dc\b|import\b)", blob))
+        dynamic = bool(re.search(rb"setInterval|setTimeout|requestAnimationFrame", raw_bytes))
+        if render == "always" or templated or dynamic:
+            budgets = [5000, 8000, 11000, 14000, 17000, 20000] if dynamic else [9000]
+            trees = render_snapshot(html_path, chrome, budgets)
+            if trees:
+                section_trees = trees
+            elif templated or dynamic:
+                log("  ! slides use templates/timed reveals but render was unavailable — "
                     "content may be incomplete (see --chrome / network)")
 
-    deck_els = _find_decks(section_tree)
-    if not deck_els:
+    deck_lists = [_find_decks(t) for t in section_trees]
+    primary = deck_lists[0]
+    if not primary:
         sys.exit("No deck found (looked for x-import/deck-stage).")
+    deck_idxs = list(range(len(primary)))
     if deck_index is not None:
-        if not (0 <= deck_index < len(deck_els)):
-            sys.exit(f"--deck-index {deck_index} out of range (found {len(deck_els)} decks)")
-        deck_els = [deck_els[deck_index]]
+        if not (0 <= deck_index < len(primary)):
+            sys.exit(f"--deck-index {deck_index} out of range (found {len(primary)} decks)")
+        deck_idxs = [deck_index]
 
     decks = []
-    for el in deck_els:
-        secs = el.xpath("./section") or el.xpath(".//section")
-        if not secs:
+    for di in deck_idxs:
+        el = primary[di]
+        # every captured frame's <section> list for this deck
+        frames = []
+        for dl in deck_lists:
+            if di < len(dl):
+                ss = dl[di].xpath("./section") or dl[di].xpath(".//section")
+                if ss:
+                    frames.append(ss)
+        if not frames:
             continue
-        for s in secs:
-            _strip_runtime_attrs(s)
+        base = frames[0]
+        chosen = []
+        for si in range(len(base)):
+            best, bestn = base[si], len(list(base[si].iter()))
+            for ss in frames[1:]:                       # keep the fullest frame per slide
+                if si < len(ss):
+                    n = len(list(ss[si].iter()))
+                    if n > bestn:
+                        best, bestn = ss[si], n
+            _strip_runtime_attrs(best)
+            chosen.append(best)
         d = Deck()
         d.width = int(el.get("width") or 1920)
         d.height = int(el.get("height") or 1080)
         d.no_rail = el.get("no-rail") is not None
-        d.sections = [lxml.html.tostring(s, encoding="unicode") for s in secs]
-        d.notes, d.notes_json = _extract_notes(el, secs)
+        d.sections = [lxml.html.tostring(s, encoding="unicode") for s in chosen]
+        d.notes, d.notes_json = _extract_notes(el, chosen)
         decks.append(d)
     if not decks:
         sys.exit("Deck container found but it has no <section> slides.")
