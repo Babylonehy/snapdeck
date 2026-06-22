@@ -24,6 +24,7 @@ presenter (speaker-notes) view.
 Usage:
     python3 snapdeck.py <export-dir-or-.dc.html> [-o OUTDIR]
         --rail                   keep the thumbnail sidebar (default: hidden / full-bleed)
+        --no-annotate            drop the laser-pointer / pen annotation toolbar
         --button-label TEXT      fullscreen button text (default "▶ Fullscreen")
         --fonts {mirror,system}  default mirror (download Google fonts → fonts/)
         --no-launcher            skip 双击放映.command / serve.sh
@@ -492,8 +493,107 @@ ANIM_REPLAY_SHIM = """
 """
 
 
+ANNOTATE_SHIM = """
+<style>
+  #sd-canvas { position:fixed; inset:0; z-index:2147483100; pointer-events:none; touch-action:none; }
+  #sd-laser { position:fixed; z-index:2147483590; width:18px; height:18px; border-radius:50%;
+    background:radial-gradient(circle,rgba(255,40,40,.95) 0%,rgba(255,40,40,.5) 42%,rgba(255,40,40,0) 70%);
+    box-shadow:0 0 14px 5px rgba(255,30,30,.55); pointer-events:none; transform:translate(-50%,-50%); display:none; }
+  #sd-tools { position:fixed; left:18px; bottom:18px; z-index:2147483600; display:flex; gap:5px; align-items:center;
+    background:rgba(20,22,26,.82); border-radius:999px; padding:6px 8px; opacity:.45; transition:opacity .2s;
+    -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); user-select:none;
+    font:600 13px/1 -apple-system,'Noto Sans SC',sans-serif; }
+  #sd-tools:hover { opacity:1; }
+  #sd-tools button { background:transparent; color:#e8eaed; border:0; border-radius:999px; cursor:pointer;
+    padding:7px 11px; font:inherit; line-height:1; }
+  #sd-tools button:hover { background:rgba(255,255,255,.12); }
+  #sd-tools button.active { background:#1d3a8a; color:#fff; }
+  #sd-tools .dot { width:16px; height:16px; padding:0; border:2px solid rgba(255,255,255,.35); }
+  #sd-tools .dot.active { border-color:#fff; transform:scale(1.15); }
+  #sd-tools .sep { width:1px; height:16px; background:rgba(255,255,255,.18); margin:0 3px; }
+  @media print { #sd-canvas, #sd-laser, #sd-tools { display:none !important; } }
+</style>
+<canvas id="sd-canvas"></canvas>
+<div id="sd-laser"></div>
+<div id="sd-tools">
+  <button data-mode="off" class="active" title="Cursor (Esc)">Cursor</button>
+  <button data-mode="laser" title="Laser pointer (L)">Laser</button>
+  <span class="sep"></span>
+  <button class="dot" data-color="#ff2d2d" style="background:#ff2d2d" title="Pen — red (P)"></button>
+  <button class="dot" data-color="#ffd23f" style="background:#ffd23f" title="Pen — yellow"></button>
+  <button class="dot" data-color="#3b82f6" style="background:#3b82f6" title="Pen — blue"></button>
+  <span class="sep"></span>
+  <button data-mode="erase" title="Eraser (E)">Erase</button>
+  <button data-act="clear" title="Clear (Del)">Clear</button>
+</div>
+<script>
+/* Presentation annotation: laser pointer, freehand pen (3 colors), eraser,
+   clear. Toolbar bottom-left; works in fullscreen; ink clears on slide change.
+   Shortcuts: L laser · P pen · E erase · Esc cursor · Del clear. */
+(function () {
+  var cv = document.getElementById('sd-canvas'), ctx = cv.getContext('2d');
+  var laser = document.getElementById('sd-laser'), tools = document.getElementById('sd-tools');
+  var mode = 'off', color = '#ff2d2d', drawing = false, last = null;
+  var dpr = Math.max(1, window.devicePixelRatio || 1);
+  function resize() {
+    dpr = Math.max(1, window.devicePixelRatio || 1);
+    cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+    cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  }
+  resize(); addEventListener('resize', resize);
+  function drawable() { return mode === 'pen' || mode === 'erase'; }
+  function refresh() {
+    cv.style.pointerEvents = drawable() ? 'auto' : 'none';
+    cv.style.cursor = drawable() ? 'crosshair' : 'default';
+    laser.style.display = mode === 'laser' ? 'block' : 'none';
+    tools.querySelectorAll('[data-mode]').forEach(function (b) { b.classList.toggle('active', b.dataset.mode === mode); });
+    tools.querySelectorAll('.dot').forEach(function (d) { d.classList.toggle('active', mode === 'pen' && d.dataset.color === color); });
+  }
+  function setMode(m) { mode = m; refresh(); }
+  function setPen(c) { color = c; mode = 'pen'; refresh(); }
+  function clear() { ctx.clearRect(0, 0, cv.width, cv.height); }
+  function P(e) { return [e.clientX * dpr, e.clientY * dpr]; }
+  cv.addEventListener('pointerdown', function (e) {
+    if (!drawable()) return; drawing = true; last = P(e); cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove', function (e) {
+    if (!drawing) return; var p = P(e);
+    ctx.globalCompositeOperation = mode === 'erase' ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = color; ctx.lineWidth = (mode === 'erase' ? 28 : 3.5) * dpr;
+    ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p;
+  });
+  function end() { drawing = false; }
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  addEventListener('pointermove', function (e) {
+    if (mode === 'laser') { laser.style.left = e.clientX + 'px'; laser.style.top = e.clientY + 'px'; }
+  }, true);
+  tools.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    e.stopPropagation();
+    if (b.dataset.act === 'clear') clear();
+    else if (b.dataset.color) setPen(b.dataset.color);
+    else if (b.dataset.mode) setMode(b.dataset.mode);
+    b.blur();   // so Space/→ go back to slide navigation, not re-trigger the button
+  });
+  addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var t = e.target; if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    var k = e.key.toLowerCase();
+    if (k === 'l') setMode('laser');
+    else if (k === 'p') setPen(color);
+    else if (k === 'e') setMode('erase');
+    else if (k === 'escape') setMode('off');
+    else if (k === 'delete' || (k === 'backspace')) { clear(); e.preventDefault(); }
+  });
+  document.addEventListener('slidechange', clear);   // ink is per-slide
+})();
+</script>
+"""
+
+
 def build_index_html(deck, title, font_css, head_styles, with_shim, auto_fs=True,
-                     button_label="▶ Fullscreen"):
+                     button_label="▶ Fullscreen", annotate=True):
     head = [
         '<!doctype html><html><head>',
         '<meta charset="utf-8">',
@@ -512,6 +612,8 @@ def build_index_html(deck, title, font_css, head_styles, with_shim, auto_fs=True
     if deck.notes_json:
         body.append(f'<script id="speaker-notes" type="application/json">{deck.notes_json}</script>')
     body.append(ANIM_REPLAY_SHIM)
+    if annotate:
+        body.append(ANNOTATE_SHIM)
     if auto_fs:
         body.append(FULLSCREEN_SHIM.replace("__BTN_LABEL__", json.dumps(button_label)))
     if with_shim:
@@ -686,6 +788,8 @@ def main():
                     help="don't show the fullscreen button on the playback page")
     ap.add_argument("--button-label", default="▶ Fullscreen",
                     help='text on the playback page fullscreen button (default: "▶ Fullscreen")')
+    ap.add_argument("--no-annotate", action="store_true",
+                    help="don't add the laser-pointer / pen annotation toolbar")
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
@@ -732,7 +836,7 @@ def main():
         (out_dir / name).write_text(
             build_index_html(deck, title, font_css, head_styles,
                              with_presenter and not multi, auto_fs=not args.no_fullscreen,
-                             button_label=args.button_label),
+                             button_label=args.button_label, annotate=not args.no_annotate),
             encoding="utf-8")
 
     # presenter (single-deck only; multi-deck keyboard/channel would collide)
