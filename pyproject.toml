@@ -1,0 +1,15 @@
+[project]
+name = "snapdeck"
+version = "0.1.0"
+description = "Turn a Claude Design deck into a fully-offline, present-anywhere bundle."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Xiang Li" }]
+dependencies = ["lxml>=5"]
+
+[project.urls]
+Homepage = "https://github.com/Babylonehy/snapdeck"
+
+[tool.uv]
+package = false

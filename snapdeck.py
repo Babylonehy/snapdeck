@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.8"
+# dependencies = ["lxml>=5"]
+# ///
 """
 snapdeck.py — Convert a "Claude Design" deck export into a fully offline,
 directly-playable presentation bundle.
@@ -20,6 +24,7 @@ presenter (speaker-notes) view.
 Usage:
     python3 snapdeck.py <export-dir-or-.dc.html> [-o OUTDIR]
         --rail                   keep the thumbnail sidebar (default: hidden / full-bleed)
+        --button-label TEXT      fullscreen button text (default "▶ Fullscreen")
         --fonts {mirror,system}  default mirror (download Google fonts → fonts/)
         --no-launcher            skip 双击放映.command / serve.sh
         --no-presenter           skip presenter.html + sync shim
@@ -437,7 +442,7 @@ FULLSCREEN_SHIM = """
   function start() {
     btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = '▶ 全屏放映';
+    btn.textContent = __BTN_LABEL__;
     btn.setAttribute('style', 'position:fixed;right:22px;bottom:22px;z-index:2147483647;'
       + 'background:#1d3a8a;color:#fff;border:0;border-radius:999px;cursor:pointer;'
       + 'font:600 16px/1 -apple-system,sans-serif;padding:13px 22px;'
@@ -487,7 +492,8 @@ ANIM_REPLAY_SHIM = """
 """
 
 
-def build_index_html(deck, title, font_css, head_styles, with_shim, auto_fs=True):
+def build_index_html(deck, title, font_css, head_styles, with_shim, auto_fs=True,
+                     button_label="▶ Fullscreen"):
     head = [
         '<!doctype html><html><head>',
         '<meta charset="utf-8">',
@@ -507,7 +513,7 @@ def build_index_html(deck, title, font_css, head_styles, with_shim, auto_fs=True
         body.append(f'<script id="speaker-notes" type="application/json">{deck.notes_json}</script>')
     body.append(ANIM_REPLAY_SHIM)
     if auto_fs:
-        body.append(FULLSCREEN_SHIM)
+        body.append(FULLSCREEN_SHIM.replace("__BTN_LABEL__", json.dumps(button_label)))
     if with_shim:
         body.append(SYNC_SHIM)
     body.append('<script src="deck-stage.js"></script>')
@@ -538,7 +544,7 @@ elif command -v xdg-open >/dev/null 2>&1; then
 fi
 echo ""
 echo "  ▶  Serving at http://127.0.0.1:$PORT"
-echo "     放映页（index.html）已打开 → 点右下角『▶ 全屏放映』按钮（或按 →）即全屏"
+echo "     放映页（index.html）已打开 → 点右下角的全屏按钮（或按 →）即全屏"
 {'echo "     演讲者视图（presenter.html）：备注 + 下一页 + 计时器，留在本机屏幕"' if with_presenter else 'true'}
 echo "     关闭此窗口或按 Ctrl-C 结束放映。"
 wait $SRV
@@ -677,7 +683,9 @@ def main():
                     help="skip the render pass (faster, but templated slides may be incomplete)")
     ap.add_argument("--chrome", default=None, help="path to Chrome/Chromium for the render pass")
     ap.add_argument("--no-fullscreen", action="store_true",
-                    help="don't auto-enter fullscreen on the playback page")
+                    help="don't show the fullscreen button on the playback page")
+    ap.add_argument("--button-label", default="▶ Fullscreen",
+                    help='text on the playback page fullscreen button (default: "▶ Fullscreen")')
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
@@ -723,7 +731,8 @@ def main():
         title = stem if not multi else f"{stem} ({i+1})"
         (out_dir / name).write_text(
             build_index_html(deck, title, font_css, head_styles,
-                             with_presenter and not multi, auto_fs=not args.no_fullscreen),
+                             with_presenter and not multi, auto_fs=not args.no_fullscreen,
+                             button_label=args.button_label),
             encoding="utf-8")
 
     # presenter (single-deck only; multi-deck keyboard/channel would collide)

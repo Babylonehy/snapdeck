@@ -12,7 +12,7 @@ Running Snapdeck on an export produces a `*-offline/` folder containing:
 
 | File | What it is |
 |------|------------|
-| `index.html` | The deck — full-bleed, keyboard nav (`←/→/Space/digits`), animations & GIFs, with a **▶ 全屏放映 / Fullscreen** button. Works by double-click, **fully offline**. |
+| `index.html` | The deck — full-bleed, keyboard nav (`←/→/Space/digits`), animations & GIFs, with a **▶ Fullscreen** button. Works by double-click, **fully offline**. |
 | `presenter.html` | **Presenter view** — current slide, next slide, speaker notes, and a timer; stays in sync with the audience window. |
 | `双击放映.command` | One-click launcher (macOS): starts a local offline server and opens both windows. `serve.sh` is the portable equivalent. |
 | `fonts/ assets/ uploads/` | All fonts and referenced media, localized so nothing is fetched from the network. |
@@ -20,34 +20,39 @@ Running Snapdeck on an export produces a `*-offline/` folder containing:
 
 ## Quick start
 
+Snapdeck uses [**uv**](https://docs.astral.sh/uv/) to manage Python and its one dependency — no manual venv, no `pip install`.
+
 ```bash
-# 1. install the one dependency
-python3 -m pip install lxml
+# 1. get uv once:  curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # 2. convert your export (a folder, or the .dc.html inside it)
-python3 snapdeck.py path/to/your-deck.dc.html
+uv run snapdeck.py path/to/your-deck.dc.html      # uv auto-creates the env + installs lxml
 
 # 3. present
-open your-deck-offline/双击放映.command     # macOS one-click
-#    → 放映页打开后，点右下角「▶ 全屏放映」即可全屏开讲；演讲者视图在另一屏看备注
+open your-deck-offline/双击放映.command            # macOS one-click
+#    → click the ▶ Fullscreen button (or press →) to go full-screen;
+#      keep presenter.html on your laptop for notes + next slide + timer
 ```
 
 > The conversion step needs internet **once** (to download fonts and render the deck). The resulting bundle is 100% offline — verify it by turning off Wi-Fi and opening `index.html`.
+>
+> Developing on Snapdeck? `uv sync` sets up the project env from `pyproject.toml`.
 
 ## Options
 
 ```
-python3 snapdeck.py <export-dir-or-.dc.html> [options]
+uv run snapdeck.py <export-dir-or-.dc.html> [options]
 
-  -o, --out DIR        output directory (default ./<name>-offline)
-  --rail               keep the thumbnail sidebar (default: hidden / full-bleed)
+  -o, --out DIR          output directory (default ./<name>-offline)
+  --rail                 keep the thumbnail sidebar (default: hidden / full-bleed)
+  --button-label TEXT    fullscreen button text (default "▶ Fullscreen")
   --fonts mirror|system  mirror = download the real fonts (default); system = use the OS fonts
-  --no-presenter       skip presenter.html
-  --no-launcher        skip the .command / serve.sh launcher
-  --no-fullscreen      don't show the fullscreen button on the playback page
-  --no-render          skip the render pass (faster, but template-driven slides may be incomplete)
-  --chrome PATH        Chrome/Chromium binary for the render pass
-  --deck-index N       pick one deck when a file contains several
+  --no-presenter         skip presenter.html
+  --no-launcher          skip the .command / serve.sh launcher
+  --no-fullscreen        don't show the fullscreen button on the playback page
+  --no-render            skip the render pass (faster, but template-driven slides may be incomplete)
+  --chrome PATH          Chrome/Chromium binary for the render pass
+  --deck-index N         pick one deck when a file contains several
 ```
 
 ## How it works
@@ -59,8 +64,8 @@ python3 snapdeck.py <export-dir-or-.dc.html> [options]
 
 ## Requirements
 
-- **Python 3.8+** and **lxml** (`pip install lxml`).
-- **Google Chrome / Chromium** — for the render pass and for `--also`-style headless work. (Skip with `--no-render` if your deck has no templates.)
+- **[uv](https://docs.astral.sh/uv/)** — manages the Python version and the lone dependency (`lxml`) for you; `uv run snapdeck.py …` just works. (Prefer plain pip? `pip install lxml && python3 snapdeck.py …` works too.)
+- **Google Chrome / Chromium** — for the render pass. (Skip with `--no-render` if your deck has no templates.)
 - **Internet at convert time** — to fetch fonts and render. Not needed afterwards.
 - A **Claude Design export** as input: a folder containing the `*.dc.html` plus its `deck-stage.js`.
 
@@ -77,12 +82,12 @@ python3 snapdeck.py <export-dir-or-.dc.html> [options]
 把 Claude Design 导出的 deck 一键转成**完全离线**、可直接放映的文件夹：
 
 ```bash
-python3 -m pip install lxml                 # 装唯一依赖
-python3 snapdeck.py 你的deck.dc.html         # 转换（转换时需联网一次）
+# 装 uv（一次）：curl -LsSf https://astral.sh/uv/install.sh | sh
+uv run snapdeck.py 你的deck.dc.html          # uv 自动建环境装依赖（转换时联网一次）
 open 你的deck-offline/双击放映.command        # 双击放映
 ```
 
-产物：`index.html`（全屏放映页，点右下角「▶ 全屏放映」即全屏）、`presenter.html`（演讲者视图：当前页 + 下一页 + 备注 + 计时器，双屏同步）、本地字体/图片/GIF，断网也能放。原理：先用无头 Chrome 把带模板的 deck 渲染展开并快照，再把字体和素材本地化、动画在切到该页时重新播放。
+产物：`index.html`（全屏放映页，点右下角 **▶ Fullscreen** 即全屏）、`presenter.html`（演讲者视图：当前页 + 下一页 + 备注 + 计时器，双屏同步）、本地字体/图片/GIF，断网也能放。原理：先用无头 Chrome 把带模板的 deck 渲染展开并快照，再把字体和素材本地化、动画在切到该页时重新播放。按钮文字可用 `--button-label` 改（如 `--button-label "▶ 全屏放映"`）。
 
 ---
 
