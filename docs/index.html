@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>📸 Snapdeck — Turn a Claude Design deck into a fully-offline presentation</title>
+<meta name="description" content="Snapdeck converts a Claude Design deck export into a self-contained, fully-offline folder you can double-click to present — fonts, images, GIFs and the deck engine all bundled in, with zero network requests at play time.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --brand:#1d3a8a;
+    --brand-press:#16306f;
+    --grad:linear-gradient(120deg,#5b8def,#7a4cc4,#d96b1a);
+    --ink:#10142a;
+    --ink-soft:#373e5e;
+    --muted:#5b6178;
+    --line:#e5e8f2;
+    --line-soft:#eef0f7;
+    --bg:#ffffff;
+    --bg-soft:#f7f8fc;
+    --bg-tint:#eef2fd;
+    --card:#ffffff;
+    --radius:18px;
+    --radius-sm:12px;
+    --shadow-sm:0 1px 2px rgba(16,20,42,.04),0 4px 14px rgba(16,20,42,.06);
+    --shadow-md:0 10px 30px rgba(16,20,42,.09),0 2px 8px rgba(16,20,42,.05);
+    --shadow-lg:0 30px 70px rgba(29,58,138,.17),0 8px 24px rgba(16,20,42,.09);
+    --font:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    font-family:var(--font);
+    color:var(--ink);
+    background:var(--bg);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    overflow-x:hidden;
+  }
+  a{color:inherit;text-decoration:none}
+  h1,h2,h3,h4{margin:0}
+  p{margin:0}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+  .grad-text{
+    background:var(--grad);
+    -webkit-background-clip:text;background-clip:text;
+    -webkit-text-fill-color:transparent;color:var(--brand);
+  }
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--brand);
+    background:var(--bg-tint);
+    border:1px solid var(--line);
+    padding:6px 14px;border-radius:999px;
+  }
+  .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--grad);flex:none}
+
+  /* ---------- buttons ---------- */
+  .btn{
+    display:inline-flex;align-items:center;gap:9px;
+    font-weight:600;font-size:15px;
+    padding:13px 22px;border-radius:12px;
+    border:1px solid transparent;cursor:pointer;
+    transition:transform .15s ease,box-shadow .2s ease,background .2s ease,border-color .2s ease;
+  }
+  .btn:focus-visible{outline:3px solid rgba(91,141,239,.55);outline-offset:2px}
+  .btn-primary{color:#fff;background:var(--grad);box-shadow:0 8px 22px rgba(91,141,239,.32)}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(122,76,196,.34)}
+  .btn-ghost{color:var(--brand);background:#fff;border-color:var(--line)}
+  .btn-ghost:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm);border-color:#cdd4ec}
+  .btn svg{width:18px;height:18px;flex:none}
+
+  /* ---------- header ---------- */
+  header.nav{
+    position:sticky;top:0;z-index:50;
+    background:rgba(255,255,255,.84);
+    backdrop-filter:saturate(180%) blur(14px);
+    -webkit-backdrop-filter:saturate(180%) blur(14px);
+    border-bottom:1px solid var(--line-soft);
+  }
+  .nav-inner{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;letter-spacing:-.02em;color:var(--ink)}
+  .brand .logo{font-size:22px;line-height:1}
+  .nav-links{display:flex;align-items:center;gap:28px}
+  .nav-links a{font-size:15px;font-weight:500;color:var(--ink-soft)}
+  .nav-links a:hover{color:var(--brand)}
+  .nav-cta{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14px;color:#fff;background:var(--brand);padding:9px 16px;border-radius:10px}
+  .nav-cta:hover{background:var(--brand-press)}
+  .nav-cta svg{width:16px;height:16px}
+  @media(max-width:780px){.nav-links a:not(.nav-cta){display:none}}
+
+  /* ---------- hero ---------- */
+  .hero{position:relative;padding:84px 0 56px;overflow:hidden}
+  .hero::before{
+    content:"";position:absolute;inset:-30% -10% auto -10%;height:640px;z-index:-1;
+    background:
+      radial-gradient(60% 60% at 18% 12%,rgba(91,141,239,.18),transparent 60%),
+      radial-gradient(55% 55% at 82% 6%,rgba(217,107,26,.13),transparent 60%),
+      radial-gradient(70% 70% at 55% 40%,rgba(122,76,196,.12),transparent 65%);
+    filter:blur(6px);
+  }
+  .hero-grid{display:grid;grid-template-columns:1.02fr 1.18fr;gap:56px;align-items:center}
+  h1{
+    font-size:clamp(38px,5.4vw,60px);line-height:1.04;letter-spacing:-.03em;
+    font-weight:800;margin:22px 0 0;color:var(--ink);
+  }
+  .lede{font-size:clamp(17px,2vw,20px);color:var(--ink-soft);margin:20px 0 0;max-width:34ch;line-height:1.5}
+  .hero-actions{display:flex;flex-wrap:wrap;gap:14px;margin-top:32px}
+  .hero-meta{display:flex;flex-wrap:wrap;gap:16px 22px;margin-top:26px;font-size:14px;color:var(--muted)}
+  .hero-meta span{display:inline-flex;align-items:center;gap:7px}
+  .hero-meta svg{width:16px;height:16px;color:var(--brand);flex:none}
+  @media(max-width:920px){
+    .hero-grid{grid-template-columns:1fr;gap:44px}
+    .hero{padding:56px 0 36px}
+    .lede{max-width:none}
+  }
+
+  /* ---------- browser mockup ---------- */
+  .mock{position:relative;padding:14px}
+  .browser{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow-lg);overflow:hidden;
+  }
+  .browser-bar{
+    display:flex;align-items:center;gap:14px;padding:13px 16px;
+    background:#fbfcff;border-bottom:1px solid var(--line-soft);
+  }
+  .traffic{display:flex;gap:7px;flex:none}
+  .traffic i{width:12px;height:12px;border-radius:50%;display:block}
+  .traffic .r{background:#ff5f57}.traffic .y{background:#febc2e}.traffic .g{background:#28c840}
+  .urlbar{
+    flex:1;min-width:0;display:flex;align-items:center;gap:8px;
+    background:#eef1f9;border-radius:8px;padding:6px 12px;
+    font-family:var(--mono);font-size:12.5px;color:var(--ink-soft);
+  }
+  .urlbar svg{width:13px;height:13px;color:#1f9e5f;flex:none}
+  .urlbar .path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .urlbar .badge{margin-left:auto;flex:none;font-family:var(--font);font-size:11px;font-weight:600;color:#0f7a45;background:#e0f5ea;padding:2px 8px;border-radius:999px}
+  .slide{
+    position:relative;aspect-ratio:16/10;
+    background:
+      radial-gradient(120% 120% at 0% 0%,rgba(91,141,239,.16),transparent 55%),
+      radial-gradient(120% 120% at 100% 100%,rgba(217,107,26,.14),transparent 52%),
+      linear-gradient(160deg,#1a2353,#2a2566 55%,#3a2a5e);
+    padding:7% 8%;display:flex;flex-direction:column;justify-content:center;color:#fff;
+  }
+  .slide .kicker{font-size:12px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:#aec4ff}
+  .slide h3{margin:14px 0 0;font-size:clamp(20px,3.2vw,30px);line-height:1.12;letter-spacing:-.02em;font-weight:800}
+  .slide p{margin:13px 0 0;font-size:clamp(13px,1.7vw,15px);color:#dbe1fb;max-width:34ch}
+  .slide .chips{display:flex;gap:8px;margin-top:20px;flex-wrap:wrap}
+  .slide .chips em{font-style:normal;font-size:12px;font-weight:500;color:#eaf0ff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);padding:5px 11px;border-radius:999px}
+  .laser{position:absolute;right:24%;top:32%;width:16px;height:16px;border-radius:50%;background:#ff4d4d;box-shadow:0 0 0 6px rgba(255,77,77,.28),0 0 22px 6px rgba(255,77,77,.55)}
+  .pen{position:absolute;left:9%;bottom:23%;width:32%;height:3px;border-radius:3px;background:#ffd23f;transform:rotate(-3deg);box-shadow:0 0 10px rgba(255,210,63,.6)}
+  .slide-dots{position:absolute;left:8%;bottom:6%;display:flex;gap:7px}
+  .slide-dots i{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.32);display:block}
+  .slide-dots i.on{background:#fff;width:22px;border-radius:999px}
+
+  /* floating annotation toolbar */
+  .toolbar{
+    position:absolute;right:0;bottom:34px;
+    display:flex;gap:4px;padding:8px;
+    background:rgba(255,255,255,.96);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow-md);
+  }
+  .toolbar .grip{display:flex;align-items:center;color:#aab1c9;padding:0 2px}
+  .toolbar .grip svg{width:14px;height:18px}
+  .tool{
+    width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+    background:#f1f4fd;color:var(--ink-soft);border:1px solid transparent;
+  }
+  .tool svg{width:17px;height:17px}
+  .tool.active{background:var(--brand);color:#fff}
+  .tool .sw{width:13px;height:13px;border-radius:50%;display:block}
+  .tool.red .sw{background:#e0413f}.tool.yellow .sw{background:#f0a81f}.tool.blue .sw{background:#3b82f6}
+  /* presenter view pill */
+  .presenter{
+    position:absolute;left:0;top:30px;
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow-md);padding:12px 14px;width:186px;max-width:48%;
+  }
+  .presenter .ttl{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .presenter .ttl .live{width:7px;height:7px;border-radius:50%;background:#28c840;box-shadow:0 0 0 3px rgba(40,200,64,.22);flex:none}
+  .presenter .timer{font-family:var(--mono);font-size:24px;font-weight:500;margin:8px 0 4px;letter-spacing:-.02em;color:var(--ink)}
+  .presenter .next{font-size:12px;color:var(--ink-soft)}
+  .presenter .next b{display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:2px;letter-spacing:.04em;text-transform:uppercase}
+  .presenter .notes{margin-top:9px;border-top:1px solid var(--line-soft);padding-top:9px}
+  .presenter .notes i{display:block;height:6px;border-radius:4px;background:var(--line);margin-bottom:6px}
+  .presenter .notes i:nth-child(2){width:80%}.presenter .notes i:nth-child(3){width:62%}
+  @media(max-width:600px){
+    .presenter,.toolbar{position:static;width:auto;max-width:none;margin-top:14px;box-shadow:var(--shadow-sm)}
+    .toolbar{justify-content:center;flex-wrap:wrap}
+    .mock{display:flex;flex-direction:column;padding:0}
+  }
+
+  /* ---------- sections ---------- */
+  section{padding:74px 0}
+  .section-head{max-width:700px;margin:0 auto 48px;text-align:center}
+  h2{font-size:clamp(28px,3.6vw,40px);line-height:1.1;letter-spacing:-.025em;font-weight:800;margin:16px 0 0}
+  .section-head p{font-size:18px;color:var(--ink-soft);margin:16px 0 0}
+
+  /* problem / solution */
+  .ps{background:var(--bg-soft);border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
+  .ps-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:stretch}
+  .ps-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:34px;box-shadow:var(--shadow-sm)}
+  .ps-card.problem{border-top:4px solid #d96b1a}
+  .ps-card.solution{border-top:4px solid #5b8def}
+  .ps-card .tag{display:inline-flex;align-items:center;gap:10px;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+  .ps-card.problem .tag{color:#b5472e}
+  .ps-card.solution .tag{color:var(--brand)}
+  .ps-card .tag .ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none}
+  .ps-card.problem .tag .ic{background:#fcebe6;color:#c2492c}
+  .ps-card.solution .tag .ic{background:var(--bg-tint);color:var(--brand)}
+  .ps-card .ic svg{width:17px;height:17px}
+  .ps-card h3{font-size:21px;letter-spacing:-.02em;margin:18px 0 0;line-height:1.25}
+  .ps-card p{color:var(--ink-soft);margin:14px 0 0;font-size:16px}
+  .ps-card .cmd{margin-top:18px;font-family:var(--mono);font-size:13px;background:#0f1430;color:#cdd6ff;padding:11px 14px;border-radius:10px;overflow-x:auto}
+  .ps-card .cmd .p{color:#7a86c0;user-select:none}
+  @media(max-width:760px){.ps-grid{grid-template-columns:1fr}}
+
+  /* features */
+  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .feat{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:26px;box-shadow:var(--shadow-sm);transition:transform .18s ease,box-shadow .2s ease,border-color .2s ease;
+  }
+  .feat:hover{transform:translateY(-4px);box-shadow:var(--shadow-md);border-color:#dde2f3}
+  .feat .ic{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;background:var(--bg-tint);color:var(--brand)}
+  .feat .ic svg{width:23px;height:23px}
+  .feat.span2{grid-column:span 2}
+  .feat h3{font-size:18px;letter-spacing:-.015em;margin:18px 0 0}
+  .feat p{color:var(--ink-soft);margin:10px 0 0;font-size:15px}
+  .feat code,.inline-code{font-family:var(--mono);font-size:.86em;background:#eceff8;color:#2c3873;padding:2px 6px;border-radius:6px}
+  @media(max-width:860px){.feat-grid{grid-template-columns:repeat(2,1fr)}.feat.span2{grid-column:span 2}}
+  @media(max-width:560px){.feat-grid{grid-template-columns:1fr}.feat.span2{grid-column:auto}}
+
+  /* quick start */
+  .qs{background:var(--bg-soft);border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
+  .qs-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:48px;align-items:center}
+  .code{
+    background:#0e1330;border:1px solid #232a52;border-radius:16px;overflow:hidden;
+    box-shadow:0 24px 60px rgba(14,19,48,.34);
+  }
+  .code-bar{display:flex;align-items:center;gap:9px;padding:12px 16px;border-bottom:1px solid #20264c;background:#0b1029}
+  .code-bar .traffic i{width:11px;height:11px}
+  .code-bar .name{margin-left:6px;font-family:var(--mono);font-size:12px;color:#8b96c9}
+  .code-bar .copy{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#bcc6f3;background:#1a2147;border:1px solid #2a3160;padding:5px 11px;border-radius:8px;cursor:pointer;font-family:var(--font)}
+  .code-bar .copy:hover{background:#222a57;color:#fff}
+  .code-bar .copy svg{width:13px;height:13px}
+  .code pre{margin:0;padding:22px 20px;overflow-x:auto}
+  .code code{font-family:var(--mono);font-size:13.5px;line-height:1.9;color:#dfe5ff;display:block;white-space:pre}
+  .code .c{color:#7480b3}
+  .code .pr{color:#5b8def;user-select:none}
+  .code .cmdn{color:#9be2c1}
+  .code .arg{color:#f0c178}
+  .qs-steps{display:flex;flex-direction:column;gap:22px}
+  .qs-step{display:flex;gap:16px}
+  .qs-step .n{flex:none;width:34px;height:34px;border-radius:11px;background:var(--grad);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px}
+  .qs-step h4{margin:4px 0 0;font-size:17px;letter-spacing:-.01em}
+  .qs-step p{margin:6px 0 0;color:var(--ink-soft);font-size:15px}
+  @media(max-width:860px){.qs-grid{grid-template-columns:1fr;gap:34px}}
+
+  /* how it works */
+  .how-steps{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .how-step{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 18px;box-shadow:var(--shadow-sm)}
+  .how-step .num{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--brand)}
+  .how-step .ic{margin-top:12px;color:var(--brand)}
+  .how-step .ic svg{width:24px;height:24px}
+  .how-step h4{font-size:15px;margin:12px 0 0;letter-spacing:-.01em}
+  .how-step p{font-size:13.5px;color:var(--muted);margin:6px 0 0}
+  .how-result{margin-top:26px;text-align:center;font-size:17px;color:var(--ink-soft)}
+  .how-result b{color:var(--ink);font-weight:700}
+  @media(max-width:980px){.how-steps{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:480px){.how-steps{grid-template-columns:1fr}}
+
+  /* requirements */
+  .req{background:var(--bg-soft);border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
+  .req-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .req-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow-sm)}
+  .req-card .ic{width:44px;height:44px;border-radius:12px;background:var(--bg-tint);color:var(--brand);display:flex;align-items:center;justify-content:center}
+  .req-card .ic svg{width:22px;height:22px}
+  .req-card h3{font-size:17px;margin:16px 0 0}
+  .req-card p{color:var(--ink-soft);margin:8px 0 0;font-size:14.5px}
+  .req-card code{font-family:var(--mono);font-size:.86em;background:#eceff8;color:#2c3873;padding:2px 6px;border-radius:6px}
+  @media(max-width:760px){.req-grid{grid-template-columns:1fr}}
+
+  /* cta band */
+  .cta{padding:74px 0}
+  .cta-inner{
+    background:var(--grad);border-radius:26px;padding:60px 40px;text-align:center;color:#fff;
+    box-shadow:var(--shadow-lg);position:relative;overflow:hidden;
+  }
+  .cta-inner::after{content:"";position:absolute;inset:0;background:radial-gradient(60% 120% at 50% -20%,rgba(255,255,255,.22),transparent 60%);pointer-events:none}
+  .cta-inner h2{color:#fff;margin:0}
+  .cta-inner p{color:rgba(255,255,255,.92);font-size:18px;margin:16px auto 0;max-width:48ch}
+  .cta-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:14px;margin-top:30px;position:relative;z-index:1}
+  .cta .btn-light{background:#fff;color:var(--brand)}
+  .cta .btn-light:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(0,0,0,.22)}
+  .cta .btn-outline{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.55)}
+  .cta .btn-outline:hover{background:rgba(255,255,255,.22);transform:translateY(-2px)}
+  .lic-pill{display:inline-flex;align-items:center;gap:8px;margin-top:24px;font-size:13px;font-weight:600;color:#fff;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);padding:6px 14px;border-radius:999px;position:relative;z-index:1}
+  .lic-pill svg{width:15px;height:15px}
+
+  /* footer */
+  footer{padding:48px 0 56px}
+  .foot{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:20px}
+  .foot .brand{font-size:17px}
+  .foot-right{display:flex;align-items:center;gap:22px;font-size:14px;color:var(--muted);flex-wrap:wrap}
+  .foot-right a{display:inline-flex;align-items:center;gap:7px;color:var(--ink-soft);font-weight:500}
+  .foot-right a:hover{color:var(--brand)}
+  .foot-right svg{width:16px;height:16px}
+  .foot-note{margin-top:22px;padding-top:22px;border-top:1px solid var(--line-soft);font-size:13px;color:var(--muted)}
+  .foot-note .inline-code{font-size:.85em}
+  .foot-note a{color:var(--brand);font-weight:600;text-decoration:underline}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top"><span class="logo" aria-hidden="true">📸</span><span>Snapdeck</span></a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#problem">Why</a>
+      <a href="#features">Features</a>
+      <a href="#quick-start">Quick start</a>
+      <a href="#how">How it works</a>
+      <a class="nav-cta" href="https://github.com/Babylonehy/snapdeck" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <span class="eyebrow"><span class="dot" aria-hidden="true"></span>📸 Offline-first presenting</span>
+        <h1>Present your <span class="grad-text">Claude deck</span> anywhere, fully offline.</h1>
+        <p class="lede">Turn a Claude Design deck into a fully-offline, present-anywhere presentation.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="https://github.com/Babylonehy/snapdeck" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+            View on GitHub
+          </a>
+          <a class="btn btn-ghost" href="#quick-start">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+            Quick start
+          </a>
+        </div>
+        <div class="hero-meta">
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10"/></svg>Zero network requests at play time</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10"/></svg>One command</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10"/></svg>MIT licensed</span>
+        </div>
+      </div>
+
+      <!-- BROWSER MOCKUP -->
+      <div class="mock">
+        <div class="browser" role="img" aria-label="A faux browser window showing an offline Snapdeck playback page, with a floating annotation toolbar and a presenter-view panel.">
+          <div class="browser-bar">
+            <span class="traffic" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+            <span class="urlbar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+              <span class="path">your-deck-offline/index.html</span>
+              <span class="badge">offline</span>
+            </span>
+          </div>
+          <div class="slide">
+            <span class="kicker">Slide 03 / 18</span>
+            <h3>Bundled. Self-contained. Ready to present.</h3>
+            <p>Fonts, images and GIFs travel with the deck — no server, no internet, no surprises.</p>
+            <div class="chips"><em>Keyboard nav</em><em>▶ Fullscreen</em><em>Animations replay</em></div>
+            <span class="laser" aria-hidden="true"></span>
+            <span class="pen" aria-hidden="true"></span>
+            <span class="slide-dots" aria-hidden="true"><i></i><i></i><i class="on"></i><i></i><i></i></span>
+          </div>
+        </div>
+
+        <!-- presenter view -->
+        <div class="presenter" aria-hidden="true">
+          <span class="ttl"><span class="live"></span>Presenter view</span>
+          <div class="timer">12:48</div>
+          <div class="next"><b>Up next</b>Live demo &amp; results</div>
+          <div class="notes"><i></i><i></i><i></i></div>
+        </div>
+
+        <!-- floating annotation toolbar -->
+        <div class="toolbar" aria-hidden="true">
+          <span class="grip"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
+          <span class="tool active" title="Laser pointer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span>
+          <span class="tool red" title="Pen (red)"><span class="sw"></span></span>
+          <span class="tool yellow" title="Pen (yellow)"><span class="sw"></span></span>
+          <span class="tool blue" title="Pen (blue)"><span class="sw"></span></span>
+          <span class="tool" title="Eraser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 14 14 5l5 5-9 9H7z"/><path d="M7 19h12"/></svg></span>
+          <span class="tool" title="Undo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7 4 12l5 5"/><path d="M4 12h11a5 5 0 0 1 0 10h-1"/></svg></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROBLEM / SOLUTION -->
+  <section class="ps" id="problem">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow"><span class="dot" aria-hidden="true"></span>The problem &amp; the fix</span>
+        <h2>Decks that break right before you present.</h2>
+      </div>
+      <div class="ps-grid">
+        <div class="ps-card problem">
+          <span class="tag"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.5 17.6A2 2 0 0 0 4.2 20.6h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>The problem</span>
+          <h3>A Claude Design deck export needs a server — and the internet — just to open.</h3>
+          <p>Decks exported as <span class="inline-code">*.dc.html</span> normally need a local web server <em>and</em> a live internet connection (Google Fonts) just to present, and they have no speaker notes or presenter view. Awkward right before a talk or interview.</p>
+        </div>
+        <div class="ps-card solution">
+          <span class="tag"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17l9-10"/></svg></span>What Snapdeck does</span>
+          <h3>One command produces a folder you double-click to present.</h3>
+          <p>Snapdeck converts that export into a self-contained <span class="inline-code">&lt;name&gt;-offline/</span> folder — fonts, images, GIFs and the deck engine all bundled in, with zero network requests at play time.</p>
+          <div class="cmd"><span class="p">$ </span>uv run snapdeck.py your-deck.dc.html</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Features</span>
+        <h2>Everything bundled, nothing left to chance.</h2>
+        <p>From a single command to laser pointers — Snapdeck packs a full presenting kit into one offline folder.</p>
+      </div>
+      <div class="feat-grid">
+
+        <div class="feat">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></span>
+          <h3>One command</h3>
+          <p>Convert any deck in a single line: <code>uv run snapdeck.py your-deck.dc.html</code>.</p>
+        </div>
+
+        <div class="feat">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg></span>
+          <h3>Fully offline</h3>
+          <p>Google Fonts mirrored locally and referenced images &amp; GIFs copied in — zero external requests at play time.</p>
+        </div>
+
+        <div class="feat">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M9 21h6M12 18v3"/><path d="m10 9 4 2.5-4 2.5z" fill="currentColor"/></svg></span>
+          <h3>Full-bleed playback</h3>
+          <p>Edge-to-edge playback page with keyboard navigation — arrows, Space, digits — plus a “▶ Fullscreen” button.</p>
+        </div>
+
+        <div class="feat span2">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="13" height="9" rx="1.5"/><rect x="17" y="7" width="5" height="5" rx="1"/><path d="M8 17v3M5 20h6"/></svg></span>
+          <h3>Presenter view</h3>
+          <p>A dedicated <code>presenter.html</code> shows the current slide, the next slide, your speaker notes and a timer — kept in sync with the audience window over <code>BroadcastChannel</code>.</p>
+        </div>
+
+        <div class="feat">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21l4-1 11-11-3-3L4 17z"/><path d="M14 6l3 3"/></svg></span>
+          <h3>On-slide annotation</h3>
+          <p>Laser pointer, pen (red, yellow, blue), eraser, undo and clear. The toolbar auto-hides when idle and is fully draggable.</p>
+        </div>
+
+        <div class="feat">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></span>
+          <h3>Animation replay</h3>
+          <p>Per-slide entrance and looping animations play when you arrive on a slide — not silently at load.</p>
+        </div>
+
+        <div class="feat">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="m7 8 5-5 5 5"/><rect x="4" y="14" width="16" height="6" rx="2"/></svg></span>
+          <h3>One-click macOS launcher</h3>
+          <p>A <code>双击放映.command</code> launcher starts a local offline server and opens the deck — with a portable <code>serve.sh</code> too.</p>
+        </div>
+
+        <div class="feat span2">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5a9 4 0 0 0 18 0M3 5a9 4 0 0 1 18 0v14a9 4 0 0 1-18 0z"/><path d="M3 12a9 4 0 0 0 18 0"/></svg></span>
+          <h3>Faithful rendering</h3>
+          <p>Template-driven slides are rendered once in headless Chrome and the finished DOM is snapshotted — so nothing is ever bundled half-empty.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- QUICK START -->
+  <section class="qs" id="quick-start">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Quick start</span>
+        <h2>From export to presenting in three lines.</h2>
+      </div>
+      <div class="qs-grid">
+        <div class="qs-steps">
+          <div class="qs-step">
+            <span class="n">1</span>
+            <div><h4>Install uv once</h4><p>A single installer sets up <span class="inline-code">uv</span>, which manages Python and the one dependency.</p></div>
+          </div>
+          <div class="qs-step">
+            <span class="n">2</span>
+            <div><h4>Convert your deck</h4><p>Point Snapdeck at your <span class="inline-code">.dc.html</span> export and it builds the offline folder.</p></div>
+          </div>
+          <div class="qs-step">
+            <span class="n">3</span>
+            <div><h4>Double-click to present</h4><p>Open the macOS launcher inside the new <span class="inline-code">-offline/</span> folder and you’re live — no internet needed.</p></div>
+          </div>
+        </div>
+
+        <div class="code">
+          <div class="code-bar">
+            <span class="traffic" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+            <span class="name">terminal</span>
+            <button class="copy" type="button" id="copyBtn" aria-label="Copy quick start commands">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              <span id="copyLabel">Copy</span>
+            </button>
+          </div>
+          <pre><code id="codeBlock"><span class="c"># install uv once:  curl -LsSf https://astral.sh/uv/install.sh | sh</span>
+<span class="pr">$ </span><span class="cmdn">uv run</span> snapdeck.py <span class="arg">your-deck.dc.html</span>
+<span class="pr">$ </span><span class="cmdn">open</span> <span class="arg">your-deck-offline/双击放映.command</span></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section id="how">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow"><span class="dot" aria-hidden="true"></span>How it works</span>
+        <h2>Render once. Snapshot. Bundle. Replay.</h2>
+        <p>Render the live deck once with its runtime, snapshot the finished DOM, localize fonts and assets, bundle the deck engine, and replay animations on each slide. The result is a folder that presents anywhere, offline.</p>
+      </div>
+      <div class="how-steps">
+        <div class="how-step">
+          <span class="num">01</span>
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <h4>Render live</h4>
+          <p>Run the deck once in headless Chrome with its real runtime.</p>
+        </div>
+        <div class="how-step">
+          <span class="num">02</span>
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/></svg></span>
+          <h4>Snapshot DOM</h4>
+          <p>Capture the finished DOM so nothing renders half-empty.</p>
+        </div>
+        <div class="how-step">
+          <span class="num">03</span>
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v6H4zM4 14h16v6H4z"/><path d="M8 7h.01M8 17h.01"/></svg></span>
+          <h4>Localize assets</h4>
+          <p>Mirror fonts and copy in images &amp; GIFs locally.</p>
+        </div>
+        <div class="how-step">
+          <span class="num">04</span>
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8l-9-5-9 5v8l9 5z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></span>
+          <h4>Bundle engine</h4>
+          <p>Pack the deck engine into the self-contained folder.</p>
+        </div>
+        <div class="how-step">
+          <span class="num">05</span>
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg></span>
+          <h4>Replay animations</h4>
+          <p>Play entrance &amp; looping animations on each slide.</p>
+        </div>
+      </div>
+      <p class="how-result">The result: a folder that <b>presents anywhere, offline</b>.</p>
+    </div>
+  </section>
+
+  <!-- REQUIREMENTS -->
+  <section class="req" id="requirements">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Requirements</span>
+        <h2>Just two tools — and the internet only at convert time.</h2>
+      </div>
+      <div class="req-grid">
+        <div class="req-card">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></span>
+          <h3>uv</h3>
+          <p>Manages Python plus the single dependency, <code>lxml</code> — nothing else to install by hand.</p>
+        </div>
+        <div class="req-card">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.2"/><path d="M12 8.8h8.6M9.1 13.6 4.8 21M14.9 13.6 19.2 21"/></svg></span>
+          <h3>Google Chrome / Chromium</h3>
+          <p>Used for the headless render pass that snapshots each finished slide.</p>
+        </div>
+        <div class="req-card">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+          <h3>Internet at convert time only</h3>
+          <p>A connection is needed once, while converting — and never again when you present.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="wrap">
+      <div class="cta-inner">
+        <h2>Ready to present without a safety net?</h2>
+        <p>Bundle your next Claude deck into an offline folder and walk into the room knowing it just works.</p>
+        <div class="cta-actions">
+          <a class="btn btn-light" href="https://github.com/Babylonehy/snapdeck" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+            View on GitHub
+          </a>
+          <a class="btn btn-outline" href="#quick-start">Read the quick start</a>
+        </div>
+        <span class="lic-pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+          Open source under the MIT license
+        </span>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <a class="brand" href="#top"><span class="logo" aria-hidden="true">📸</span><span>Snapdeck</span></a>
+      <div class="foot-right">
+        <span>MIT licensed</span>
+        <a href="https://github.com/Babylonehy/snapdeck" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          github.com/Babylonehy/snapdeck
+        </a>
+      </div>
+    </div>
+    <p class="foot-note">Snapdeck turns a Claude Design deck export into a fully-offline, present-anywhere presentation. Released under the <span class="inline-code">MIT</span> license — internet only at convert time, never when presenting. Source on <a href="https://github.com/Babylonehy/snapdeck" target="_blank" rel="noopener">GitHub</a>.</p>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var btn=document.getElementById('copyBtn');
+    if(!btn)return;
+    btn.addEventListener('click',function(){
+      var cmds=["# install uv once:  curl -LsSf https://astral.sh/uv/install.sh | sh","uv run snapdeck.py your-deck.dc.html","open your-deck-offline/双击放映.command"].join("\n");
+      var label=document.getElementById('copyLabel');
+      var done=function(){label.textContent="Copied";setTimeout(function(){label.textContent="Copy";},1600);};
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cmds).then(done).catch(done);}
+      else{done();}
+    });
+  })();
+</script>
+
+</body>
+</html>

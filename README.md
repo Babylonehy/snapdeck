@@ -2,6 +2,8 @@
 
 **Turn a Claude Design deck into a fully-offline presentation you can run anywhere — one command, no server, no internet, with a built-in presenter view.**
 
+🔗 **Homepage:** https://babylonehy.github.io/snapdeck/
+
 Claude Design decks (`*.dc.html` exports) normally need a local server *and* a live internet connection (Google Fonts) to present, and they have no speaker-notes view. Snapdeck takes one of those exports and produces a self-contained folder you just double-click to present — fonts, images, GIFs and the deck engine all bundled in.
 
 ---
